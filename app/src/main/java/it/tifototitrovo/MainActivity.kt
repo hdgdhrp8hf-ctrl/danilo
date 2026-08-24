@@ -1,11 +1,12 @@
 package it.tifototitrovo
 
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,8 +20,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabeler
@@ -57,8 +60,10 @@ data class ImageResult(
     val confidence: Float
 )
 
-@androidx.compose.runtime.Composable
+@Composable
 fun TifotoTiTrovoApp() {
+
+    val context = LocalContext.current
 
     var bitmap by remember {
         mutableStateOf<Bitmap?>(null)
@@ -145,14 +150,10 @@ fun TifotoTiTrovoApp() {
                 try {
 
                     val inputStream =
-                        androidx.compose.ui.platform.LocalContext
-                            .current
-                            .contentResolver
-                            .openInputStream(uri)
+                        context.contentResolver.openInputStream(uri)
 
                     val selectedBitmap =
-                        android.graphics.BitmapFactory
-                            .decodeStream(inputStream)
+                        BitmapFactory.decodeStream(inputStream)
 
                     inputStream?.close()
 
