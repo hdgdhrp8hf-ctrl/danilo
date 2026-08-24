@@ -14,86 +14,185 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabeling
-import java.io.File
-import java.io.FileOutputStream
 
 class MainActivity : ComponentActivity() {
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { TifotoTiTrovo() }
+
+        setContent {
+            TifotoTiTrovo()
+        }
     }
 }
 
 @Composable
 fun TifotoTiTrovo() {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var bitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var labels by remember { mutableStateOf<List<String>>(emptyList()) }
-    var busy by remember { mutableStateOf(false) }
 
-    fun analyze(bmp: Bitmap) {
-        bitmap = bmp
+    val context = LocalContext.current
+
+    var labels by remember {
+        mutableStateOf<List<String>>(emptyList())
+    }
+
+    var busy by remember {
+        mutableStateOf(false)
+    }
+
+    fun analyze(bitmap: Bitmap) {
+
         labels = emptyList()
         busy = true
-        val image = InputImage.fromBitmap(bmp, 0)
-        ImageLabeling.getClient().process(image)
+
+        val image = InputImage.fromBitmap(bitmap, 0)
+
+        ImageLabeling
+            .getClient()
+            .process(image)
             .addOnSuccessListener { result ->
-                labels = result.sortedByDescending { it.confidence }
-                    .take(10)
+
+                labels = result
                     .filter { it.confidence >= 0.35f }
-                    .map { "${it.text} — ${(it.confidence * 100).toInt()}%" }
+                    .take(10)
+                    .map {
+                        "${it.text} — ${(it.confidence * 100).toInt()}%"
+                    }
+
                 busy = false
             }
-            .addOnFailureListener {
-                labels = listOf("Errore: ${it.message ?: "analisi non riuscita"}")
+            .addOnFailureListener { error ->
+
+                labels = listOf(
+                    "Errore: ${error.message ?: "analisi non riuscita"}"
+                )
+
                 busy = false
             }
     }
 
-    val camera = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicturePreview()
-    ) { bmp -> if (bmp != null) analyze(bmp) }
+    val camera =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.TakePicturePreview()
+        ) { bitmap ->
 
-    val permission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) camera.launch(null) }
+            if (bitmap != null) {
+                analyze(bitmap)
+            }
+        }
+
+    val permission =
+        rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+
+            if (granted) {
+                camera.launch(null)
+            }
+        }
 
     MaterialTheme {
+
         Scaffold(
-            topBar = { TopAppBar(title = { Text("TifotoTiTrovo") }) }
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text("TifotoTiTrovo")
+                    }
+                )
+            }
         ) { padding ->
+
             LazyColumn(
-                Modifier.padding(padding).fillMaxSize().padding(18.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                modifier = Modifier
+                    .padding(padding)
+                    .fillMaxSize()
+                    .padding(18.dp),
+
+                horizontalAlignment =
+                    Alignment.CenterHorizontally,
+
+                verticalArrangement =
+                    Arrangement.spacedBy(16.dp)
             ) {
+
                 item {
-                    Text("📸 Fai solo la foto", style = MaterialTheme.typography.headlineSmall)
+
                     Text(
-                        "Primo test: l'AI riconosce automaticamente ciò che vede. Non devi scrivere nulla.",
+                        "📸 Fai solo la foto",
+                        style =
+                            MaterialTheme.typography.headlineSmall
+                    )
+
+                    Text(
+                        "L'AI prova a riconoscere automaticamente gli oggetti.",
                         fontSize = 14.sp
                     )
                 }
+
                 item {
+
                     Button(
                         onClick = {
-                            if (context.checkSelfPermission(Manifest.permission.CAMERA) ==
-                                PackageManager.PERMISSION_GRANTED) camera.launch(null)
-                            else permission.launch(Manifest.permission.CAMERA)
+
+                            if (
+                                context.checkSelfPermission(
+                                    Manifest.permission.CAMERA
+                                ) == PackageManager.PERMISSION_GRANTED
+                            ) {
+
+                                camera.launch(null)
+
+                            } else {
+
+                                permission.launch(
+                                    Manifest.permission.CAMERA
+                                )
+                            }
                         },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("FOTOGRAFA") }
+
+                        modifier =
+                            Modifier.fillMaxWidth()
+                    ) {
+
+                        Text("FOTOGRAFA")
+                    }
                 }
+
                 item {
-                    if (busy) CircularProgressIndicator()
+
+                    if (busy) {
+
+                        CircularProgressIndicator()
+                    }
+
                     if (labels.isNotEmpty()) {
-                        Column(Modifier.fillMaxWidth()) {
-                            Text("🤖 Riconosciuto", style = MaterialTheme.typography.titleLarge)
-                            labels.forEach { Text("• $it") }
+
+                        Column(
+                            modifier =
+                                Modifier.fillMaxWidth()
+                        ) {
+
+                            Text(
+                                "🤖 Oggetti riconosciuti",
+                                style =
+                                    MaterialTheme.typography.titleLarge
+                            )
+
+                            Spacer(
+                                Modifier.height(8.dp)
+                            )
+
+                            labels.forEach { label ->
+
+                                Text(
+                                    "• $label"
+                                )
+                            }
                         }
                     }
                 }
