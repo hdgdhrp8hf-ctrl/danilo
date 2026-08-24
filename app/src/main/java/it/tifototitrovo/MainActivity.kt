@@ -1,15 +1,12 @@
 package it.tifototitrovo
 
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
-import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -18,23 +15,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.label.ImageLabeler
 import com.google.mlkit.vision.label.ImageLabeling
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
 
@@ -44,194 +41,257 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            TifotoTiTrovo()
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    TifotoTiTrovoApp()
+                }
+            }
         }
     }
 }
 
-@Composable
-fun TifotoTiTrovo() {
+data class ImageResult(
+    val text: String,
+    val confidence: Float
+)
 
-    val context = LocalContext.current
+@androidx.compose.runtime.Composable
+fun TifotoTiTrovoApp() {
 
-    var labels by remember {
-        mutableStateOf<List<String>>(emptyList())
+    var bitmap by remember {
+        mutableStateOf<Bitmap?>(null)
     }
 
-    var busy by remember {
+    var results by remember {
+        mutableStateOf<List<ImageResult>>(emptyList())
+    }
+
+    var isAnalyzing by remember {
         mutableStateOf(false)
     }
 
-    fun analyze(bitmap: Bitmap) {
+    var errorMessage by remember {
+        mutableStateOf<String?>(null)
+    }
 
-        labels = emptyList()
-        busy = true
+    val imageLabeler: ImageLabeler = remember {
+        ImageLabeling.getClient(
+            ImageLabelerOptions.DEFAULT_OPTIONS
+        )
+    }
 
-        val image = InputImage.fromBitmap(bitmap, 0)
+    DisposableEffect(Unit) {
+        onDispose {
+            imageLabeler.close()
+        }
+    }
 
-        ImageLabeling
-            .getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
-            .process(image)
-            .addOnSuccessListener { result ->
+    fun analyzeImage(newBitmap: Bitmap) {
 
-                labels = result
-                    .filter { it.confidence >= 0.35f }
+        bitmap = newBitmap
+        results = emptyList()
+        errorMessage = null
+        isAnalyzing = true
+
+        val image = InputImage.fromBitmap(
+            newBitmap,
+            0
+        )
+
+        imageLabeler.process(image)
+            .addOnSuccessListener { labels ->
+
+                results = labels
+                    .sortedByDescending { it.confidence }
                     .take(10)
-                    .map { label ->
-                        "${label.text} — ${(label.confidence * 100).toInt()}%"
+                    .map {
+                        ImageResult(
+                            text = it.text,
+                            confidence = it.confidence
+                        )
                     }
 
-                busy = false
+                isAnalyzing = false
             }
-            .addOnFailureListener { error ->
+            .addOnFailureListener { exception ->
 
-                labels = listOf(
-                    "Errore: ${error.message ?: "analisi non riuscita"}"
-                )
+                errorMessage =
+                    exception.message
+                        ?: "Errore durante l'analisi della foto."
 
-                busy = false
+                isAnalyzing = false
             }
     }
 
-    val camera = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
+    val cameraLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.TakePicturePreview()
+        ) { capturedBitmap ->
 
-        if (result.resultCode == ComponentActivity.RESULT_OK) {
-
-            val bitmap =
-                result.data
-                    ?.extras
-                    ?.get("data") as? Bitmap
-
-            if (bitmap != null) {
-                analyze(bitmap)
+            if (capturedBitmap != null) {
+                analyzeImage(capturedBitmap)
             }
         }
-    }
 
-    val permission = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
+    val galleryLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.GetContent()
+        ) { uri ->
 
-        if (granted) {
+            if (uri != null) {
 
-            val intent =
-                Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                try {
 
-            camera.launch(intent)
-        }
-    }
+                    val inputStream =
+                        androidx.compose.ui.platform.LocalContext
+                            .current
+                            .contentResolver
+                            .openInputStream(uri)
 
-    MaterialTheme {
+                    val selectedBitmap =
+                        android.graphics.BitmapFactory
+                            .decodeStream(inputStream)
 
-        Scaffold(
-            topBar = {
+                    inputStream?.close()
 
-                TopAppBar(
-                    title = {
-                        Text("TifotoTiTrovo")
+                    if (selectedBitmap != null) {
+                        analyzeImage(selectedBitmap)
+                    } else {
+                        errorMessage =
+                            "Impossibile leggere la foto."
                     }
-                )
+
+                } catch (exception: Exception) {
+
+                    errorMessage =
+                        exception.message
+                            ?: "Errore durante l'apertura della foto."
+                }
             }
-        ) { paddingValues ->
+        }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Top
+    ) {
+
+        Text(
+            text = "📸 TifotoTiTrovo",
+            style = MaterialTheme.typography.headlineMedium
+        )
+
+        Spacer(
+            modifier = Modifier.height(8.dp)
+        )
+
+        Text(
+            text = "Fotografa o scegli una foto.\nL'AI proverà a riconoscere cosa contiene.",
+            style = MaterialTheme.typography.bodyLarge
+        )
+
+        Spacer(
+            modifier = Modifier.height(20.dp)
+        )
+
+        Button(
+            onClick = {
+                cameraLauncher.launch(null)
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("📷 FAI UNA FOTO")
+        }
+
+        Spacer(
+            modifier = Modifier.height(10.dp)
+        )
+
+        Button(
+            onClick = {
+                galleryLauncher.launch("image/*")
+            },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("🖼️ SCEGLI UNA FOTO")
+        }
+
+        Spacer(
+            modifier = Modifier.height(20.dp)
+        )
+
+        bitmap?.let { imageBitmap ->
+
+            Image(
+                bitmap = imageBitmap.asImageBitmap(),
+                contentDescription = "Foto analizzata",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(280.dp)
+            )
+
+            Spacer(
+                modifier = Modifier.height(20.dp)
+            )
+        }
+
+        if (isAnalyzing) {
+
+            CircularProgressIndicator()
+
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
+
+            Text(
+                text = "🤖 Analisi in corso..."
+            )
+        }
+
+        errorMessage?.let { message ->
+
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
+
+            Text(
+                text = "⚠️ $message",
+                color = MaterialTheme.colorScheme.error
+            )
+        }
+
+        if (results.isNotEmpty()) {
+
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
+
+            Text(
+                text = "🔎 Ho trovato:",
+                style = MaterialTheme.typography.titleLarge
+            )
+
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
 
             LazyColumn(
-                modifier = Modifier
-                    .padding(paddingValues)
-                    .fillMaxSize()
-                    .padding(18.dp),
-
-                horizontalAlignment =
-                    Alignment.CenterHorizontally,
-
-                verticalArrangement =
-                    Arrangement.spacedBy(16.dp)
+                modifier = Modifier.fillMaxWidth()
             ) {
 
-                item {
+                items(results) { result ->
 
                     Text(
-                        text = "📸 Fai solo la foto",
-                        style =
-                            MaterialTheme.typography.headlineSmall
+                        text = "${result.text} — ${(result.confidence * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(
+                            vertical = 6.dp
+                        )
                     )
-
-                    Text(
-                        text =
-                            "Non scrivere il nome. Fai solo la foto.",
-                        fontSize = 14.sp
-                    )
-                }
-
-                item {
-
-                    Button(
-                        onClick = {
-
-                            if (
-                                context.checkSelfPermission(
-                                    Manifest.permission.CAMERA
-                                ) == PackageManager.PERMISSION_GRANTED
-                            ) {
-
-                                val intent =
-                                    Intent(
-                                        MediaStore.ACTION_IMAGE_CAPTURE
-                                    )
-
-                                camera.launch(intent)
-
-                            } else {
-
-                                permission.launch(
-                                    Manifest.permission.CAMERA
-                                )
-                            }
-                        },
-
-                        modifier =
-                            Modifier.fillMaxWidth()
-                    ) {
-
-                        Text("📸 FOTOGRAFA")
-                    }
-                }
-
-                item {
-
-                    if (busy) {
-
-                        CircularProgressIndicator()
-                    }
-
-                    if (labels.isNotEmpty()) {
-
-                        Column(
-                            modifier =
-                                Modifier.fillMaxWidth()
-                        ) {
-
-                            Text(
-                                text =
-                                    "🤖 Oggetti riconosciuti",
-
-                                style =
-                                    MaterialTheme.typography
-                                        .titleLarge
-                            )
-
-                            Spacer(
-                                modifier =
-                                    Modifier.height(8.dp)
-                            )
-
-                            labels.forEach { label ->
-
-                                Text("• $label")
-                            }
-                        }
-                    }
                 }
             }
         }
