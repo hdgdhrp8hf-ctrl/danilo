@@ -1,17 +1,34 @@
 package it.tifototitrovo
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -19,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabeling
+import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
 
 class MainActivity : ComponentActivity() {
 
@@ -52,15 +70,15 @@ fun TifotoTiTrovo() {
         val image = InputImage.fromBitmap(bitmap, 0)
 
         ImageLabeling
-            .getClient()
+            .getClient(ImageLabelerOptions.DEFAULT_OPTIONS)
             .process(image)
             .addOnSuccessListener { result ->
 
                 labels = result
                     .filter { it.confidence >= 0.35f }
                     .take(10)
-                    .map {
-                        "${it.text} — ${(it.confidence * 100).toInt()}%"
+                    .map { label ->
+                        "${label.text} — ${(label.confidence * 100).toInt()}%"
                     }
 
                 busy = false
@@ -75,41 +93,52 @@ fun TifotoTiTrovo() {
             }
     }
 
-    val camera =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.TakePicturePreview()
-        ) { bitmap ->
+    val camera = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+
+        if (result.resultCode == ComponentActivity.RESULT_OK) {
+
+            val bitmap =
+                result.data
+                    ?.extras
+                    ?.get("data") as? Bitmap
 
             if (bitmap != null) {
                 analyze(bitmap)
             }
         }
+    }
 
-    val permission =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { granted ->
+    val permission = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
 
-            if (granted) {
-                camera.launch(null)
-            }
+        if (granted) {
+
+            val intent =
+                Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+
+            camera.launch(intent)
         }
+    }
 
     MaterialTheme {
 
         Scaffold(
             topBar = {
+
                 TopAppBar(
                     title = {
                         Text("TifotoTiTrovo")
                     }
                 )
             }
-        ) { padding ->
+        ) { paddingValues ->
 
             LazyColumn(
                 modifier = Modifier
-                    .padding(padding)
+                    .padding(paddingValues)
                     .fillMaxSize()
                     .padding(18.dp),
 
@@ -123,13 +152,14 @@ fun TifotoTiTrovo() {
                 item {
 
                     Text(
-                        "📸 Fai solo la foto",
+                        text = "📸 Fai solo la foto",
                         style =
                             MaterialTheme.typography.headlineSmall
                     )
 
                     Text(
-                        "L'AI prova a riconoscere automaticamente gli oggetti.",
+                        text =
+                            "Non scrivere il nome. Fai solo la foto.",
                         fontSize = 14.sp
                     )
                 }
@@ -145,7 +175,12 @@ fun TifotoTiTrovo() {
                                 ) == PackageManager.PERMISSION_GRANTED
                             ) {
 
-                                camera.launch(null)
+                                val intent =
+                                    Intent(
+                                        MediaStore.ACTION_IMAGE_CAPTURE
+                                    )
+
+                                camera.launch(intent)
 
                             } else {
 
@@ -159,7 +194,7 @@ fun TifotoTiTrovo() {
                             Modifier.fillMaxWidth()
                     ) {
 
-                        Text("FOTOGRAFA")
+                        Text("📸 FOTOGRAFA")
                     }
                 }
 
@@ -178,20 +213,22 @@ fun TifotoTiTrovo() {
                         ) {
 
                             Text(
-                                "🤖 Oggetti riconosciuti",
+                                text =
+                                    "🤖 Oggetti riconosciuti",
+
                                 style =
-                                    MaterialTheme.typography.titleLarge
+                                    MaterialTheme.typography
+                                        .titleLarge
                             )
 
                             Spacer(
-                                Modifier.height(8.dp)
+                                modifier =
+                                    Modifier.height(8.dp)
                             )
 
                             labels.forEach { label ->
 
-                                Text(
-                                    "• $label"
-                                )
+                                Text("• $label")
                             }
                         }
                     }
